@@ -1,5 +1,5 @@
 /*
-llft - A series of low level file tools
+LLFT - A series of low level file tools
 Copyright (C) 2026 Playful Mathematician <me@playfulmathematician>
 
 This program is free software: you can redistribute it and/or modify
