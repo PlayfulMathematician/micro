@@ -1,5 +1,5 @@
 /*
-LLFT - A series of low level file tools
+png.cpp - A single file png writer
 Copyright (C) 2026 Playful Mathematician <me@playfulmathematician>
 
 This program is free software: you can redistribute it and/or modify
@@ -16,6 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <ostream>
 #include <vector>
@@ -121,9 +122,9 @@ uint32_t adler32(const std::vector<unsigned char> &data) {
 
 void write_idat(const Image &img, std::ostream &stream) {
   std::vector<unsigned char> filtered;
-  for (int i = 0; i < img.height; i++) {
+  for (uint32_t i = 0; i < img.height; i++) {
     filtered.push_back(0x00);
-    for (int j = 0; j < 4 * img.width; j++) {
+    for (uint32_t j = 0; j < 4 * img.width; j++) {
       filtered.push_back(img.rgba[4 * img.width * i + j]);
     }
   }
@@ -171,8 +172,8 @@ int main() {
   img.height = 1024;
 
   img.rgba = std::vector<uint8_t>();
-  for (int y = 0; y < img.height; y++) {
-    for (int x = 0; x < img.width; x++) {
+  for (uint32_t y = 0; y < img.height; y++) {
+    for (uint32_t x = 0; x < img.width; x++) {
       img.rgba.push_back(x / 4);
       img.rgba.push_back(y / 4);
       img.rgba.push_back(x / 8 + y / 8);
