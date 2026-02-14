@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -O2
 
-TARGET = ls
+TARGET = ls.out
 SRC = ls.c
 
 all: $(TARGET)

@@ -13,11 +13,13 @@ GNU Affero General Public License for more details.
 
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
 
- */
 #define _DEFAULT_SOURCE
 #include <dirent.h>
 #include <grp.h>
+#include <limits.h>
+#include <pwd.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -26,11 +28,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 /*
-stat(const char *restrict file, struct stat *restrict buf)
-stat.st_gid
-*getgrgid(group id)
-
+  stat(const char *restrict file, struct stat *restrict buf)
+  stat.st_gid
+ *getgrgid(group id)
 */
 
 enum LS_FLAGS {
@@ -39,7 +41,57 @@ enum LS_FLAGS {
   LS_A = 0x00000004,
   LS_A_or_a = 0x00000005
 };
-uint32_t flag_list[1000];
+
+void print_file(const char *filename, char *path, uint32_t flags) {
+  if (filename[0] == '.' && !(flags & LS_A_or_a)) {
+    return;
+  }
+  if ((!strcmp(filename, ".") || !strcmp(filename, "..")) && (flags & LS_A)) {
+    return;
+  }
+
+  if (!(flags & LS_l)) {
+    printf("%s\n", filename);
+    return;
+  }
+  char a_path[4000] = "";
+  strcpy(a_path, path);
+  strcat(a_path, "/");
+  strcat(a_path, filename);
+  char *real_path = realpath(a_path, NULL);
+  struct stat file_stat = {0};
+  stat(real_path, &file_stat);
+  // off_t      st_size;     /* Total size, in bytes */
+  /*
+    Plans for tommorow: Set up permissions, get permissions to work
+
+           S_IRWXU     00700   owner has read, write, and execute permission
+           S_IRUSR     00400   owner has read permission
+           S_IWUSR     00200   owner has write permission
+           S_IXUSR     00100   owner has execute permission
+
+           S_IRWXG     00070   group has read, write, and execute permission
+           S_IRGRP     00040   group has read permission
+           S_IWGRP     00020   group has write permission
+           S_IXGRP     00010   group has execute permission
+
+           S_IRWXO     00007   others (not in group) have read, write, and exe‐
+                               cute permission
+           S_IROTH     00004   others have read permission
+           S_IWOTH     00002   others have write permission
+           S_IXOTH     00001   others have execute permission
+*/
+
+  struct group *group_struct = getgrgid(file_stat.st_gid);
+  struct passwd *pass_struct = getpwuid(file_stat.st_uid);
+  struct tm *filetime = localtime(&file_stat.st_mtim.tv_sec);
+
+  char datetime_string[14];
+  strftime(datetime_string, sizeof(datetime_string), "%b %d %H:%M", filetime);
+  printf("% *li %s %s % *li %s %s\n", 2, file_stat.st_nlink,
+         pass_struct->pw_name, group_struct->gr_name, 6, file_stat.st_size,
+         datetime_string, filename);
+}
 
 void handle_flag(uint32_t *flags, uint32_t flag) {
   if (flag == LS_a) {
@@ -58,12 +110,11 @@ void handle_flag(uint32_t *flags, uint32_t flag) {
 int main(int argc, char *argv[]) {
   char *path = NULL;
   uint32_t flags = 0;
-  uint32_t flag_idx = 0;
   for (int i = 0; i < argc; i++) {
     if (i == 0) {
       continue;
     }
-    const char *param = argv[i];
+    char *param = argv[i];
     if (param[0] == '-') {
       if (param[1] == '-') {
         uint32_t cur_flag = 0;
@@ -74,9 +125,8 @@ int main(int argc, char *argv[]) {
         if (!strcmp(param, "--almost-all")) {
           cur_flag = LS_A;
         }
+        handle_flag(&flags, cur_flag);
 
-        flag_list[flag_idx] = cur_flag;
-        flag_idx++;
       } else {
         unsigned long length = strlen(param);
 
@@ -97,16 +147,12 @@ int main(int argc, char *argv[]) {
             cur_flag = LS_A;
             break;
           }
-          flag_list[flag_idx] = cur_flag;
-          flag_idx++;
+          handle_flag(&flags, cur_flag);
         }
       }
     } else {
       path = param;
     }
-  }
-  for (uint32_t fli = 0; fli < flag_idx; fli++) {
-    handle_flag(&flags, flag_list[fli]);
   }
 
   if (path == NULL) {
@@ -124,18 +170,8 @@ int main(int argc, char *argv[]) {
       break;
     }
     const char *filename = dirent_ptr->d_name;
-    if (filename[0] == '.' && !(flags & LS_A_or_a)) {
-      continue;
-    }
-    if ((!strcmp(filename, ".") || !strcmp(filename, "..")) && (flags & LS_A)) {
-      continue;
-    }
-    printf("%s", filename);
-    if (flags & LS_l) {
-      printf("\n");
-    } else {
-      printf(" ");
-    }
+
+    print_file(filename, path, flags);
   }
   // make sure to close
   closedir(dir);
