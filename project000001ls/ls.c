@@ -29,6 +29,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#define max(a, b) ((a) > (b) ? (a) : (b))
 
 enum LS_FLAGS {
   LS_a = 0x00000001,
@@ -38,25 +39,54 @@ enum LS_FLAGS {
 };
 
 typedef struct {
-  char *filename;
-  char *permissions;
-  char* link_count;
-  char *owner;
-  char *owner_group;
-  char* file_size; // because -h
+  char filename[40];
+  char permissions[40];
+  char link_count[40];
+  char owner[40];
+  char owner_group[40];
+  char file_size[40];
+  char date_time[40];
+  bool valid;
 } FileInfo;
 
-void print_file(const char *filename, char *path, uint32_t flags) {
-  if (filename[0] == '.' && !(flags & LS_A_or_a)) {
+typedef struct {
+  unsigned long file_len; //
+  unsigned long perm_len; //
+  unsigned long ln_len; //
+  unsigned long owner_len; //
+  unsigned long group_len; //
+  unsigned long size_len;
+  unsigned long time_len;
+} FileSizeInfo;
+
+void handle_fi(FileInfo fi, FileSizeInfo *fsi) {
+  if (!fi.valid) {
     return;
   }
+
+  fsi->file_len = max(strlen(fi.filename), fsi->file_len);
+  fsi->group_len = max(strlen(fi.owner_group), fsi->group_len);
+  fsi->owner_len = max(strlen(fi.owner), fsi->owner_len);
+  fsi->ln_len = max(strlen(fi.link_count), fsi->ln_len);
+  fsi->perm_len = max(strlen(fi.permissions), fsi->perm_len);
+  fsi->size_len = max(strlen(fi.file_size), fsi->size_len);
+  fsi->time_len = max(strlen(fi.date_time), fsi->time_len);
+}
+
+
+
+
+FileInfo generate_file_info(const char *filename, char *path, uint32_t flags) {
+  if (filename[0] == '.' && !(flags & LS_A_or_a)) {
+    return (FileInfo){0};
+  }
   if ((!strcmp(filename, ".") || !strcmp(filename, "..")) && (flags & LS_A)) {
-    return;
+    return (FileInfo){0};
   }
 
   if (!(flags & LS_l)) {
     printf("%s\n", filename);
-    return;
+    return (FileInfo){0};
   }
   char a_path[4000] = "";
   strcpy(a_path, path);
@@ -66,10 +96,10 @@ void print_file(const char *filename, char *path, uint32_t flags) {
   struct stat file_stat = {0};
   lstat(a_path, &file_stat);
   mode_t mod = file_stat.st_mode;
-  char permissions_string[12] = "rwxrwxrwx\0\0\0";
+  char permissions_string[13] = "-rwxrwxrwx\0\0\0";
   for (int permission = 0; permission < 9; permission++) {
     if (!(mod & (1 << (8 - permission)))) {
-          permissions_string[permission] = '-';
+          permissions_string[permission + 1] = '-';
 	}
   }
   /*
@@ -89,27 +119,8 @@ void print_file(const char *filename, char *path, uint32_t flags) {
   } else if (S_ISLNK(mod)) {
     thing_type = 'l';
   }
-  // off_t      st_size;     /* Total size, in bytes */
-  /*
-    Plans for tommorow: Set up permissions, get permissions to work
-
-           S_IRWXU     00700   owner has read, write, and execute permission
-           S_IRUSR     00400   owner has read permission
-           S_IWUSR     00200   owner has write permission
-           S_IXUSR     00100   owner has execute permission
-
-           S_IRWXG     00070   group has read, write, and execute permission
-           S_IRGRP     00040   group has read permission
-           S_IWGRP     00020   group has write permission
-           S_IXGRP     00010   group has execute permission
-
-           S_IRWXO     00007   others (not in group) have read, write, and exe‐
-                               cute permission
-           S_IROTH     00004   others have read permission
-           S_IWOTH     00002   others have write permission
-           S_IXOTH     00001   others have execute permission
-*/
-
+  permissions_string[0] = thing_type;
+  
   struct group *group_struct = getgrgid(file_stat.st_gid);
   struct passwd *pass_struct = getpwuid(file_stat.st_uid);
   struct tm *filetime = localtime(&file_stat.st_mtim.tv_sec);
@@ -117,26 +128,38 @@ void print_file(const char *filename, char *path, uint32_t flags) {
   char datetime_string[14];
   strftime(datetime_string, sizeof(datetime_string), "%b %d %H:%M", filetime);
   FileInfo fi = {};
-  fi.permissions = permissions_string;
-  // fi.link_count = file_stat.st_nlink; // resolve later
-  fi.owner = pass_struct->pw_name;
-  fi.owner_group = group_struct->gr_name;
-  // fi.file_size = file_stat.st_size;
-  // fi.data_time = datetime_string
-  fi.filename = (char*)filename;
+  char *link_string;
+  asprintf(&link_string, "%li", file_stat.st_nlink);
+  
+  char *size_string;
+  asprintf(&size_string, "%li", file_stat.st_size);
 
-  // plans for tommorow:
-  // Make this export FileType thingy
-  // seperate filteration and this step
-  // iterate through files to get length
-  // store maybe in length data struct
-  // then we will have perfect alignment
-  // we can add more flags, easily
-  // goodbye :)
-  printf("%c%s % *li %s %s % *li %s %s\n",thing_type,permissions_string, 2, file_stat.st_nlink,
-         pass_struct->pw_name, group_struct->gr_name, 6, file_stat.st_size,
-         datetime_string, filename);
+  fi.valid = true;
+  strcpy(fi.permissions, permissions_string);
+  strcpy(fi.link_count, link_string);
+  strcpy(fi.date_time, datetime_string);
+  strcpy(fi.owner, pass_struct->pw_name);
+  strcpy(fi.owner_group, group_struct->gr_name);
+  strcpy(fi.file_size, size_string);
+  strcpy(fi.filename, filename);
+  return fi;
 }
+
+void print_everything(FileInfo *fil, int file_count, FileSizeInfo fsi) {
+  for (int i = 0; i < file_count; i++) {
+    FileInfo fi = fil[i];
+    if (!fi.valid) {
+      return;
+};          
+    printf("%*s %*s %*s %*s %*s %*s %*s\n", (int)fsi.perm_len, fi.permissions,
+           (int)fsi.ln_len, fi.link_count,
+           (int)fsi.owner_len, fi.owner, (int)fsi.group_len,
+           fi.owner_group, (int)fsi.size_len, fi.file_size, (int)fsi.time_len, fi.date_time, (int)fsi.file_len, fi.filename);
+           
+  }
+  
+};
+
 
 void handle_flag(uint32_t *flags, uint32_t flag) {
   if (flag == LS_a) {
@@ -209,6 +232,10 @@ int main(int argc, char *argv[]) {
   if (dir == NULL) {
     return 0;
   }
+  FileInfo *fis = malloc(10000 * sizeof(FileInfo));
+  FileSizeInfo fsi = (FileSizeInfo){0};
+  int capacity = 10000;
+  int fisidx = 0; // rename better lateer
   while (true) {
     struct dirent *dirent_ptr = readdir(dir);
     if (dirent_ptr == NULL) {
@@ -216,8 +243,17 @@ int main(int argc, char *argv[]) {
     }
     const char *filename = dirent_ptr->d_name;
 
-    print_file(filename, path, flags);
+    FileInfo fi = generate_file_info(filename, path, flags);
+    
+    memcpy(fis + fisidx, &fi, sizeof(FileInfo));
+    fisidx++;
+    if (fisidx >= capacity) {
+      fis = realloc(fis, capacity * 2);
+      capacity *= 2;
+    }
+    handle_fi(fi, &fsi);
   }
+  print_everything(fis, fisidx, fsi);
   // make sure to close
   closedir(dir);
   return 0;
