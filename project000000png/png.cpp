@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #include <fstream>
 #include <ostream>
 #include <vector>
+
 struct Image {
   uint32_t width;
   uint32_t height;
@@ -32,6 +33,7 @@ static void crc32_init(void) {
   uint32_t crc32 = 1;
   for (unsigned int i = 128; i; i >>= 1) {
     crc32 = (crc32 >> 1) ^ (crc32 & 1 ? 0xedb88320 : 0);
+    
     for (unsigned int j = 0; j < 256; j += 2 * i)
       crc_table[i + j] = crc32 ^ crc_table[j];
   }

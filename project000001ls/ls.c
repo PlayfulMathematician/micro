@@ -254,7 +254,6 @@ int main(int argc, char *argv[]) {
     handle_fi(fi, &fsi);
   }
   print_everything(fis, fisidx, fsi);
-  // make sure to close
   closedir(dir);
   return 0;
 }
